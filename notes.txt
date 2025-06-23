@@ -1,0 +1,5 @@
+The dynamics in animate_dynamics_rigid_hex show the pendulum-like
+oscillations of the rigid hexagon as it orbits around the center.
+
+Why are the pendulum-like oscillations not seen in animate_dynamics2,
+even when k is large?
