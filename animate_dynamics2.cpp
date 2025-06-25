@@ -87,21 +87,41 @@ class Playback : public Fl_Gl_Window {
             oy /= params.num_points;
         }
         glPushMatrix();
-            glColor3f(0.6, 0.6, 0.6);
+            // Draw the connections. Color-code based on whether the spring is
+            // stretched or compressed (relative to the natural length params.L).
             for (idx = 0; idx < params.num_connections; ++idx) {
                 int i, j;
+                double red, blue;
+                double line_base_color = 0.6;
                 i = params.connections[2*idx];
                 j = params.connections[2*idx+1];
+
+                double x1 = NV_Ith_S(state, 2*i);
+                double y1 = NV_Ith_S(state, 2*i+1);
+                double x2 = NV_Ith_S(state, 2*j);
+                double y2 = NV_Ith_S(state, 2*j+1);
+                double dist = hypot(x2 - x1, y2 - y1);
+                if (dist <= params.L) {
+                    red = line_base_color + (1 - line_base_color)*tanh(25*(params.L - dist)/params.L);
+                    blue = line_base_color;
+                }
+                else if (dist > params.L) {
+                    blue = line_base_color + (1 - line_base_color)*tanh(25*(dist - params.L)/params.L);
+                    red = line_base_color;
+                }
+                glColor3f(red, line_base_color, blue);
+
                 glBegin(GL_LINES);
-                xx = (NV_Ith_S(state, 2*i) - ox)/SCALE;
-                yy = (NV_Ith_S(state, 2*i+1) - oy)/SCALE;
+                xx = (x1 - ox)/SCALE;
+                yy = (y1 - oy)/SCALE;
                 glVertex2f(xx, yy);
-                xx = (NV_Ith_S(state, 2*j) - ox)/SCALE;
-                yy = (NV_Ith_S(state, 2*j+1) - oy)/SCALE;
+                xx = (x2 - ox)/SCALE;
+                yy = (y2 - oy)/SCALE;
                 glVertex2f(xx, yy);
                 glEnd();
             }
 
+            // Draw the point masses as white dots.
             glColor3f(1.0, 1.0, 1.0);
             glPointSize(3.0);
             glBegin(GL_POINTS);
