@@ -27,8 +27,21 @@ static SUNContext sunctx = NULL;
 #define CENTER_OF_MASS 1
 
 int connections[2*12] = {
-    0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6,
-    1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 1};
+    0, 1,
+    0, 2,
+    0, 3,
+    0, 4,
+    0, 5,
+    0, 6,
+    1, 2,
+    2, 3,
+    3, 4,
+    4, 5,
+    5, 6,
+    6, 1
+};
+
+
 
 class Playback : public Fl_Gl_Window {
 
@@ -59,7 +72,7 @@ class Playback : public Fl_Gl_Window {
         if (!valid()) {
             valid(1);
             glLoadIdentity();
-            glViewport(0,0,w(),h());
+            glViewport(0, 0, w(), h());
         }
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -176,9 +189,9 @@ public:
 
         center = ORIGIN;
 
-        params.k = 6.0;
+        params.k = 5.0;
         params.L = 1.5;
-        params.b = 1.0;
+        params.b = 0.5;
         params.g = 8.0;
         params.r0 = 0.25;
         params.num_points = 7;
@@ -189,7 +202,7 @@ public:
         p = N_VGetArrayPointer(state);
         hex_ics(9.0, 9.0, params.L, p);
 
-        double v0 = 0.5;
+        double v0 = 0.45;
         NV_Ith_S(state, 14) =  v0;
         NV_Ith_S(state, 15) = -v0;
         NV_Ith_S(state, 16) =  v0;
@@ -202,8 +215,8 @@ public:
         NV_Ith_S(state, 23) = -v0;
         NV_Ith_S(state, 24) =  v0;
         NV_Ith_S(state, 25) = -v0;
-        NV_Ith_S(state, 26) =  v0;
-        NV_Ith_S(state, 27) = 2*v0;
+        NV_Ith_S(state, 26) = 0.1*v0;
+        NV_Ith_S(state, 27) = -0.1*v0;
 
         tau = SUN_RCONST(0.0);
         dtau = SUN_RCONST(0.125);
