@@ -1,6 +1,5 @@
-#include <cvode/cvode.h>
-#include <nvector/nvector_serial.h>
-#include <cvode/cvode_dense.h>
+#include <sundials/sundials_core.h> // Provides core SUNDIALS types
+
 #include <math.h>
 #include <stdio.h>
 #include "de.h"
@@ -9,23 +8,29 @@
 extern "C" {
 #endif
 
-/*
- *  Nonlinear spring force.
- */
+//
+// Force of the spring, given separation r, spring constant k,
+// and natural length L.
+//
 double spring_force(double r, double k, double L)
 {
-    return k*(r - (L*L*L)/(r*r));
+    double rho = L/r;
+    return -k*r*(1 - rho)*(1 + rho + rho*rho);
+    // return k*r*(1 - rho);
+    // return k*(L - r);
 }
 
 
-/*
- *  The vector field.
- *
- *  w holds [x0, y0, x1, y1, x2, y2,
- *            dx0/dt, dy0/dt, dx1/dt, dy1/dt, dx2/dt, dy2/dt]
- */
+//
+//  The vector field for three point masses connected by springs.
+//
+// (This function has not been maintained lately.)
+//
+//  w holds [x0, y0, x1, y1, x2, y2,
+//            dx0/dt, dy0/dt, dx1/dt, dy1/dt, dx2/dt, dy2/dt]
+//
 
-int de3(realtype t, N_Vector w, N_Vector f, void *params)
+int de3(sunrealtype t, N_Vector w, N_Vector f, void *params)
 {
     params_t *p = params;
     int indices[3][2] = {{0, 1}, {0, 2}, {1, 2}};
@@ -47,7 +52,7 @@ int de3(realtype t, N_Vector w, N_Vector f, void *params)
 
         uvec[0] = X(w,j) - X(w,i);
         uvec[1] = Y(w,j) - Y(w,i);
-        dist = sqrt(uvec[0]*uvec[0] + uvec[1]*uvec[1]);
+        dist = hypot(uvec[0], uvec[1]);
         uvec[0] /= dist;
         uvec[1] /= dist;
 
@@ -70,7 +75,7 @@ int de3(realtype t, N_Vector w, N_Vector f, void *params)
 
     if (p->g > 0) {
         for (idx = 0; idx < 3; ++idx) {
-            double r = sqrt(X(w,idx)*X(w,idx) + Y(w,idx)*Y(w,idx));
+            double r = hypot(X(w, idx), Y(w, idx));
             if (r < 0.0001) {
                 r = 0.0001;
             }
@@ -84,18 +89,19 @@ int de3(realtype t, N_Vector w, N_Vector f, void *params)
 }
 
 
-/*
- *  The vector field.
- *
- *  w holds [x0, y0, x1, y1, x2, y2, ....,
- *            dx0/dt, dy0/dt, dx1/dt, dy1/dt, dx2/dt, dy2/dt, ...]
- */
+//
+// The vector field for a system of point masses in a plane connected
+// by springs.
+//
+//
+//  w holds [x0, y0, x1, y1, x2, y2, ...,
+//           dx0/dt, dy0/dt, dx1/dt, dy1/dt, dx2/dt, dy2/dt, ...]
+//
 
 
-int de(realtype t, N_Vector w, N_Vector f, void *params)
+int de(sunrealtype t, N_Vector w, N_Vector f, void *params)
 {
     xparams_t *p = params;
-    //int indices[3][2] = {{0, 1}, {0, 2}, {1, 2}};
     int num_points;
     int idx;
     int num_connections;
@@ -108,6 +114,8 @@ int de(realtype t, N_Vector w, N_Vector f, void *params)
     for (idx = 0; idx < num_points; ++idx) {
         NV_Ith_S(f, 2*idx) = NV_Ith_S(w, 2*num_points + 2*idx);
         NV_Ith_S(f, 2*idx+1) = NV_Ith_S(w, 2*num_points + 2*idx + 1);
+        NV_Ith_S(f, 2*num_points + 2*idx) = 0.0;
+        NV_Ith_S(f, 2*num_points + 2*idx + 1) = 0.0;
     }
 
     for (idx = 0; idx < num_connections; ++idx) {
@@ -119,32 +127,39 @@ int de(realtype t, N_Vector w, N_Vector f, void *params)
         i = connections[2*idx];
         j = connections[2*idx + 1];
 
-        /* uvec is a unit vector pointing from point j to point i. */
+        // uvec is a unit vector pointing from point i to point j.
         uvec[0] = NV_Ith_S(w, 2*j) - NV_Ith_S(w, 2*i);
         uvec[1] = NV_Ith_S(w, 2*j+1) - NV_Ith_S(w, 2*i+1);
-        dist = sqrt(uvec[0]*uvec[0] + uvec[1]*uvec[1]);
+        dist = hypot(uvec[0], uvec[1]);
         uvec[0] /= dist;
         uvec[1] /= dist;
 
+        //
+        // Compute the contribution of the spring forces to the system of equations.
+        //
         force = spring_force(dist, p->k, p->L);
         fvec[0] = force*uvec[0];
         fvec[1] = force*uvec[1];
         ii = 2*num_points + 2*i;
         jj = 2*num_points + 2*j;
-        NV_Ith_S(f, ii)     += fvec[0];
-        NV_Ith_S(f, ii + 1) += fvec[1];
-        NV_Ith_S(f, jj)     -= fvec[0];
-        NV_Ith_S(f, jj + 1) -= fvec[1];
+        NV_Ith_S(f, ii)     -= fvec[0];
+        NV_Ith_S(f, ii + 1) -= fvec[1];
+        NV_Ith_S(f, jj)     += fvec[0];
+        NV_Ith_S(f, jj + 1) += fvec[1];
 
-        /* relvel is the velocity of point j relative to point i. */
+        //
+        // Compute the contribution of the friction forces to the system of equations.
+        //
+        // relvel is the velocity of point j relative to point i.
         relvel[0] = NV_Ith_S(w, jj) - NV_Ith_S(w, ii);
         relvel[1] = NV_Ith_S(w, jj+1) - NV_Ith_S(w, ii+1);
-        /* s is the rate of change of the distance between points i and j. */
+        // s is the rate of change of the distance between points i and j.
         s = relvel[0]*uvec[0] + relvel[1]*uvec[1];
-        /* Friction force between points i and j. */
+        // Friction force between points i and j.
         force = p->b * s;
         fvec[0] = force * uvec[0];
         fvec[1] = force * uvec[1];
+
         NV_Ith_S(f, ii)   += fvec[0];
         NV_Ith_S(f, ii+1) += fvec[1];
         NV_Ith_S(f, jj)   -= fvec[0];
@@ -152,23 +167,23 @@ int de(realtype t, N_Vector w, N_Vector f, void *params)
     }
 
     if (p->g > 0) {
+        // Compute the contribution of the gravitational forces to
+        // the system of equations.
         for (idx = 0; idx < num_points; ++idx) {
             double xi, yi;
             xi = NV_Ith_S(w, 2*idx);
             yi = NV_Ith_S(w, 2*idx+1);
-            double r = sqrt(xi * xi + yi * yi);
+            double r = hypot(xi, yi);
             double r3 = r*r*r;
-            //printf("%e %e  ", -p->g*xi/r3, -p->g*yi/r3);
             NV_Ith_S(f, 2*num_points + 2*idx) += -p->g * xi / r3;
             NV_Ith_S(f, 2*num_points + 2*idx + 1) += -p->g * yi / r3;
         }
-        //printf("\n");
     }
 
     return 0;
 }
 
-int collision(realtype t, N_Vector w, realtype *gout, void *user_data)
+int collision(sunrealtype t, N_Vector w, sunrealtype *gout, void *user_data)
 {
     xparams_t *p = user_data;
     int num_points;
@@ -209,12 +224,12 @@ int hex_ics(double cx, double cy, double L, double *p)
 }
 
 
-/*
- *  7 point masses arrange in a hexagonal pattern,
- *  rigidly tied together.  State variables are (xc, yc, theta),
- *  where (xc, yc) is the center of the hexagon.
- */
-int de_rigid_hex(realtype t, N_Vector w, N_Vector f, void *params)
+//
+//  7 point masses arrange in a hexagonal pattern,
+//  rigidly tied together.  State variables are (xc, yc, theta),
+//  where (xc, yc) is the center of the hexagon.
+//
+int de_rigid_hex(sunrealtype t, N_Vector w, N_Vector f, void *params)
 {
     double xc, yc, theta;
     double u, v, omega;
@@ -223,14 +238,14 @@ int de_rigid_hex(realtype t, N_Vector w, N_Vector f, void *params)
 
     rigid_hex_params_t *p = params;
 
-    /* Moment of inertia, 6*m*r**2, with m = 1, and r is p->L. */
+    // Moment of inertia, 6*m*r**2, with m = 1, and r is p->L.
     Ic = 6.0*(p->L)*(p->L);
 
-    /* Current position and angle of the 7 point hexagon. */
+    // Current position and angle of the 7 point hexagon.
     xc = NV_Ith_S(w, 0);
     yc = NV_Ith_S(w, 1);
     theta = NV_Ith_S(w, 2);
-    /* Current translational and angular velocities. */
+    // Current translational and angular velocities.
     u = NV_Ith_S(w, 3);
     v = NV_Ith_S(w, 4);
     omega = NV_Ith_S(w, 5);
@@ -250,7 +265,7 @@ int de_rigid_hex(realtype t, N_Vector w, N_Vector f, void *params)
             dy = (p->L)*sin(theta);
         }
         else {
-            /* idx == 6 is the center point. */
+            // idx == 6 is the center point.
             dx = 0.0;
             dy = 0.0;
         }
@@ -259,7 +274,7 @@ int de_rigid_hex(realtype t, N_Vector w, N_Vector f, void *params)
         ri = sqrt(xi*xi + yi*yi);
         ri3 = ri*ri*ri;
 
-        /* Components of the gravitational force. */
+        // Components of the gravitational force.
         fx = -p->g * xi / ri3;
         fy = -p->g * yi / ri3;
 
@@ -267,14 +282,13 @@ int de_rigid_hex(realtype t, N_Vector w, N_Vector f, void *params)
         NV_Ith_S(f, 4) += fy;
         NV_Ith_S(f, 5) += -dx*fy + dy*fx;  // torque about (xc,yc)
     }
-    /* Total mass is 7. */
+    // Total mass is 7.
     NV_Ith_S(f, 3) /= 7.0;
     NV_Ith_S(f, 4) /= 7.0;
     NV_Ith_S(f, 5) /= Ic;
 
     return 0;
 }
-
 
 #ifdef __cplusplus
 }

@@ -1,16 +1,25 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Gl_Window.H>
 #include <FL/gl.h>
+
 #include <math.h>
 #include <iostream>
 
-#include <cvode/cvode.h>
-#include <nvector/nvector_serial.h>
-#include <cvode/cvode_dense.h>
+#include <sundials/sundials_core.h>     // Provides core SUNDIALS types
+#include <cvode/cvode.h>                // CVODE provides linear multistep methods
+#include <nvector/nvector_serial.h>     // access to serial N_Vector
+#include <sunlinsol/sunlinsol_dense.h>  // access to dense SUNLinearSolver
+#include <sunmatrix/sunmatrix_dense.h>  // access to dense SUNmatrix
+
+//#include <cvode/cvode.h>
+//#include <nvector/nvector_serial.h>
+//#include <cvode/cvode_dense.h>
 
 #include "de.h"
 
-// Warning: Poorly designed C++ code ahead...
+
+// SUNDIALS context
+static SUNContext sunctx = NULL;
 
 #define SCALE 12.5
 
@@ -32,9 +41,9 @@ class Playback : public Fl_Gl_Window {
     N_Vector state;
 
     void *cvode_mem;
-    realtype tau;
-    realtype dtau;
-    realtype tau1;
+    sunrealtype tau;
+    sunrealtype dtau;
+    sunrealtype tau1;
 
     int crashed;
 
@@ -80,7 +89,7 @@ class Playback : public Fl_Gl_Window {
                 glEnd();
             }
 
-            /* Draw the disk in the center. */
+            // Draw the disk in the center.
             glColor3f(0.75, 0.75, 0.0);
             glBegin(GL_POLYGON);
             for (int i = 0; i < 13; i++) {
@@ -111,7 +120,6 @@ class Playback : public Fl_Gl_Window {
                      &(pb->tau), CV_NORMAL);
         if (flag == CV_ROOT_RETURN) {
             pb->crashed = 1;
-
         }
         pb->redraw();
         if (!pb->crashed) {
@@ -125,7 +133,6 @@ public:
     {
         char c;
 
-        //std::cerr << "handle: e = " << e << "\n";
         if (e == FL_FOCUS || e == FL_UNFOCUS) {
             return 1;
         }
@@ -151,29 +158,38 @@ public:
     // Constructor
     Playback(int X, int Y, int W, int H, const char*L=0) : Fl_Gl_Window(X,Y,W,H,L)
     {
+        int retval;
         int flag;
         double *p;
+
+        std::cerr << "Playback() start\n";
+
+        /* Create the SUNDIALS context */
+        retval = SUNContext_Create(SUN_COMM_NULL, &sunctx);
+        if (retval) {
+            std::cerr << "SUNContext_Create() failed.\n";
+            return;
+        }
 
         frame = 0;
         frame_period = 1.0/24.0;
 
         center = ORIGIN;
 
-        //params.k = 30.0;
-        params.k = 3.0;
+        params.k = 6.0;
         params.L = 1.5;
-        params.b = 20.0;
-        params.g = 5.0;
-        params.r0 = 0.5;
+        params.b = 1.0;
+        params.g = 8.0;
+        params.r0 = 0.25;
         params.num_points = 7;
         params.num_connections = 12;
         params.connections = connections;
 
-        state = N_VNew_Serial(4*params.num_points);
+        state = N_VNew_Serial(4*params.num_points, sunctx);
         p = N_VGetArrayPointer(state);
         hex_ics(9.0, 9.0, params.L, p);
 
-        double v0 = 0.35;
+        double v0 = 0.5;
         NV_Ith_S(state, 14) =  v0;
         NV_Ith_S(state, 15) = -v0;
         NV_Ith_S(state, 16) =  v0;
@@ -187,13 +203,13 @@ public:
         NV_Ith_S(state, 24) =  v0;
         NV_Ith_S(state, 25) = -v0;
         NV_Ith_S(state, 26) =  v0;
-        NV_Ith_S(state, 27) = -v0;
+        NV_Ith_S(state, 27) = 2*v0;
 
-        tau = RCONST(0.0);
-        dtau = RCONST(0.125);
-        tau1 = RCONST(2500.0);
+        tau = SUN_RCONST(0.0);
+        dtau = SUN_RCONST(0.125);
+        tau1 = SUN_RCONST(2500.0);
 
-        cvode_mem = CVodeCreate(CV_ADAMS, CV_FUNCTIONAL);
+        cvode_mem = CVodeCreate(CV_ADAMS, sunctx);
         if (cvode_mem == NULL) {
             std::cerr << "darn it\n";
         }
@@ -201,8 +217,26 @@ public:
         flag = CVodeInit(cvode_mem, de, tau, state);
         flag = CVodeSStolerances(cvode_mem, 1e-10, 1e-12);
         flag = CVodeSetUserData(cvode_mem, &params);
-        flag = CVodeSetMaxNumSteps(cvode_mem, 100000);
-        flag = CVDense(cvode_mem, 4*params.num_points);
+        flag = CVodeSetMaxNumSteps(cvode_mem, 500000);
+
+        // Create dense SUNMatrix for use in linear solves
+        SUNMatrix A = SUNDenseMatrix(4*params.num_points, 4*params.num_points, sunctx);
+        if (!A) {
+            std::cerr << "SUNDenseMatrix() failed.\n";
+        }
+
+        // Create dense SUNLinearSolver object
+        SUNLinearSolver LS = SUNLinSol_Dense(state, A, sunctx);
+        if (!LS) {
+            std::cerr << "SUNLinSol_Dense() failed.\n";
+        }
+
+        // Attach the matrix and linear solver to CVODE
+        retval = CVodeSetLinearSolver(cvode_mem, LS, A);
+        if (retval) {
+            std::cerr << "CVodeSetLinearSolver() failed.\n";
+        }
+
         flag = CVodeSetStopTime(cvode_mem, tau1);
         flag = CVodeRootInit(cvode_mem, params.num_points, collision);
 
@@ -210,6 +244,8 @@ public:
 
         Fl::add_timeout(frame_period, Timer_CB, (void*)this);
         end();
+
+        std::cerr << "Playback() returning\n";
     }
 };
 

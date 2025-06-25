@@ -1,9 +1,8 @@
-
-
-SUNDIALS_DIR=/usr/local
+# Define the macro SUNDIALS_DIR externally to point to the installation
+# directory of Sundials.
 SUNDIALS_LIB_DIR=$(SUNDIALS_DIR)/lib
 SUNDIALS_INC_DIR=$(SUNDIALS_DIR)/include
-SUNDIALS_LIBS=-lsundials_cvode -lsundials_nvecserial
+SUNDIALS_LIBS=-lsundials_cvode -lsundials_core
 SUNDIALS_INCS=-I$(SUNDIALS_INC_DIR)
 LIBS=-lm
 
@@ -12,8 +11,7 @@ animate_dynamics_rigid_hex: animate_dynamics_rigid_hex.o de.o
 	g++ $(LDFLAGS) -o animate_dynamics_rigid_hex animate_dynamics_rigid_hex.o de.o -L$(SUNDIALS_LIB_DIR) $(SUNDIALS_LIBS) $(LIBS) `fltk-config --use-gl --ldflags`
 
 animate_dynamics2: animate_dynamics2.o de.o
-	g++ $(LDFLAGS) -o animate_dynamics2 animate_dynamics2.o de.o -L$(SUNDIALS_LIB_DIR) $(SUNDIALS_LIBS) $(LIBS) `fltk-config --use-gl --ldflags`
-
+	g++ $(LDFLAGS) -o animate_dynamics2 animate_dynamics2.o de.o -L$(SUNDIALS_LIB_DIR) $(SUNDIALS_LIBS) $(LIBS) `fltk-config --use-gl --ldflags` -lGL
 
 animate_dynamics: animate_dynamics.o de.o
 	g++ $(LDFLAGS) -o animate_dynamics animate_dynamics.o de.o -L$(SUNDIALS_LIB_DIR) $(SUNDIALS_LIBS) $(LIBS) `fltk-config --use-gl --ldflags`
@@ -24,9 +22,12 @@ animate_dynamics_rigid_hex.o: animate_dynamics_rigid_hex.cpp de.h
 animate_dynamics.o: animate_dynamics.cpp de.h
 	g++ $(CPPFLAGS) $(SUNDIALS_INCS) `fltk-config --use-gl --cflags` -c animate_dynamics.cpp
 
+animate_dynamics2.o: animate_dynamics2.cpp de.h
+	g++ $(CPPFLAGS) $(SUNDIALS_INCS) `fltk-config --use-gl --cflags` -c animate_dynamics2.cpp
+
 de.o: de.c de.h
 	$(CC) $(CPPFLAGS) $(SUNDIALS_INCS) -c de.c
 
 clean:
-	rm -f animate_dynamics.o de.o
+	rm -f animate_dynamics.o animate_dynamics2.o de.o
 

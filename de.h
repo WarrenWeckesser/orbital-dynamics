@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <nvector/nvector_serial.h> // access to serial N_Vector
+
 typedef struct _params {
     double k, L, b, g;
 } params_t;
@@ -30,11 +32,11 @@ typedef struct _rigid_hex_params {
 #define U(w,i)  NV_Ith_S(w, 2*(i)+6)
 #define V(w,i)  NV_Ith_S(w, 2*(i)+7)
 
-int de3(realtype t, N_Vector w, N_Vector f, void *params);
-int de(realtype t, N_Vector w, N_Vector f, void *params);
-int collision(realtype t, N_Vector y, realtype *gout, void *user_data);
+int de3(sunrealtype t, N_Vector w, N_Vector f, void *params);
+int de(sunrealtype t, N_Vector w, N_Vector f, void *params);
+int collision(sunrealtype t, N_Vector y, sunrealtype *gout, void *user_data);
 int hex_ics(double cx, double cy, double L, double *p);
-int de_rigid_hex(realtype t, N_Vector w, N_Vector f, void *params);
+int de_rigid_hex(sunrealtype t, N_Vector w, N_Vector f, void *params);
 
 #ifdef __cplusplus
 }
