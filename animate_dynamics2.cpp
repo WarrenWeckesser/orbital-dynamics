@@ -87,7 +87,7 @@ class Playback : public Fl_Gl_Window {
             oy /= params.num_points;
         }
         glPushMatrix();
-            glColor3f(0.2, 0.8, 0.2);
+            glColor3f(0.6, 0.6, 0.6);
             for (idx = 0; idx < params.num_connections; ++idx) {
                 int i, j;
                 i = params.connections[2*idx];
@@ -101,6 +101,16 @@ class Playback : public Fl_Gl_Window {
                 glVertex2f(xx, yy);
                 glEnd();
             }
+
+            glColor3f(1.0, 1.0, 1.0);
+            glPointSize(3.0);
+            glBegin(GL_POINTS);
+            for (int i = 0; i < params.num_points; ++i) {
+                double x = (NV_Ith_S(state, 2*i) - ox)/SCALE;
+                double y = (NV_Ith_S(state, 2*i+1) - oy)/SCALE;
+                glVertex2f(x, y);
+            }
+            glEnd();
 
             // Draw the disk in the center.
             glColor3f(0.75, 0.75, 0.0);
@@ -189,7 +199,7 @@ public:
 
         center = ORIGIN;
 
-        params.k = 5.0;
+        params.k = 2.5;
         params.L = 1.5;
         params.b = 0.5;
         params.g = 8.0;
